@@ -67,13 +67,16 @@ export class CreateJobDto {
   postingUrl?: string;
 }
 
-export class UpdateJobDto extends CreateJobDto {
-  @ApiPropertyOptional()
+export class UpdateJobDto implements Partial<CreateJobDto> {
+  @ApiPropertyOptional({ description: 'Job title' })
   @IsOptional()
+  @IsString()
+  @MaxLength(100)
   title?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Job description' })
   @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiPropertyOptional()

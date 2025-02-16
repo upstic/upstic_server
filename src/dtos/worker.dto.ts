@@ -30,7 +30,7 @@ export class CreateWorkerDto {
   @Min(0)
   experience: number;
 
-  @ApiProperty({ description: 'Preferred work location' })
+  @ApiProperty({ description: 'Preferred location' })
   @IsString()
   preferredLocation: string;
 
@@ -51,33 +51,42 @@ export class CreateWorkerDto {
   resumeUrl?: string;
 }
 
-export class UpdateWorkerDto extends CreateWorkerDto {
+export class UpdateWorkerDto implements Partial<CreateWorkerDto> {
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   firstName?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   lastName?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsEmail()
   email?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsPhoneNumber()
   phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   skills?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsNumber()
+  @Min(0)
   experience?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   preferredLocation?: string;
 }
 
@@ -85,7 +94,7 @@ export class WorkerResponseDto extends CreateWorkerDto {
   @ApiProperty({ description: 'Worker ID' })
   id: string;
 
-  @ApiProperty({ description: 'Worker availability status' })
+  @ApiProperty({ description: 'Worker status' })
   @IsString()
   status: string;
 

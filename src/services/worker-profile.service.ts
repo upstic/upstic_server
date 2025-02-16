@@ -12,6 +12,7 @@ import { validateDocument } from '../utils/document-validator';
 import { processImage } from '../utils/image-processor';
 import { parseCV } from '../utils/cv-parser';
 import { sanitizeHtml } from '../utils/sanitizer';
+import { NotificationType } from '../types/notification.types';
 
 @Injectable()
 export class WorkerProfileService {
@@ -88,7 +89,7 @@ export class WorkerProfileService {
         userId,
         title: 'Profile Update',
         body: 'Your profile is now more visible to potential employers!',
-        type: 'PROFILE_UPDATE'
+        type: NotificationType.PROFILE_UPDATE
       });
     }
 

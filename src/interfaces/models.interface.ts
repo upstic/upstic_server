@@ -25,34 +25,45 @@ export interface IClient extends Document {
   updatedAt: Date;
 }
 
-export interface IWorker extends Document {
+export interface IWorker {
   _id: Types.ObjectId;
+  userId: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
   skills: string[];
   experience: number;
-  availability: string;
   preferredLocation: string;
-  location: string;
+  status: string;
+  availability: {
+    status: string;
+    schedule: Array<{
+      day: string;
+      isAvailable: boolean;
+      shifts?: Array<{
+        startTime: string;
+        endTime: string;
+      }>;
+    }>;
+  };
   salary: {
     expected: number;
     currency: string;
   };
-  languages?: string[];
-  metrics?: {
-    reliabilityScore: number;
-    profileCompleteness: number;
-    totalPlacements: number;
-    averageRating: number;
-  };
-  documents?: Array<{
+  languages: string[];
+  documents: Array<{
     type: string;
     name: string;
     url: string;
     verified: boolean;
   }>;
+  metrics: {
+    reliabilityScore: number;
+    profileCompleteness: number;
+    totalPlacements: number;
+    averageRating: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }

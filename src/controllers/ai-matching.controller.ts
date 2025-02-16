@@ -33,21 +33,13 @@ export class AiMatchingController {
   @ApiParam({ name: 'workerId', description: 'Worker ID' })
   @ApiQuery({ type: MatchingOptionsDto })
   async findMatchingJobs(
-    @Param('workerId') workerId: string,
-    @Query() options: MatchingOptionsDto
+    @Param('workerId') workerId: string
   ): Promise<{ status: string; data: { jobs: IJob[] } }> {
-    try {
-      const jobs = await this.aiMatchingService.findMatchingJobs(workerId, options);
-      logger.info('Found matching jobs', { workerId, count: jobs.length } as LogMetadata);
-      
-      return {
-        status: 'success',
-        data: { jobs }
-      };
-    } catch (error) {
-      logger.error('Error finding matching jobs:', { error, workerId } as LogMetadata);
-      throw error;
-    }
+    const jobs = await this.aiMatchingService.findMatchingJobs(workerId);
+    return {
+      status: 'success',
+      data: { jobs }
+    };
   }
 
   @Get('candidates/:jobId')
@@ -60,21 +52,13 @@ export class AiMatchingController {
   @ApiParam({ name: 'jobId', description: 'Job ID' })
   @ApiQuery({ type: MatchingOptionsDto })
   async findMatchingCandidates(
-    @Param('jobId') jobId: string,
-    @Query() options: MatchingOptionsDto
+    @Param('jobId') jobId: string
   ): Promise<{ status: string; data: { candidates: IWorker[] } }> {
-    try {
-      const candidates = await this.aiMatchingService.findMatchingCandidates(jobId, options);
-      logger.info('Found matching candidates', { jobId, count: candidates.length } as LogMetadata);
-      
-      return {
-        status: 'success',
-        data: { candidates }
-      };
-    } catch (error) {
-      logger.error('Error finding matching candidates:', { error, jobId } as LogMetadata);
-      throw error;
-    }
+    const candidates = await this.aiMatchingService.findMatchingCandidates(jobId);
+    return {
+      status: 'success',
+      data: { candidates }
+    };
   }
 
   // From CONTEXT.md: "PushNotifications: Get alerted immediately about a job alert."

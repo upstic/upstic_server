@@ -281,28 +281,26 @@ export class JobService {
     const { sortBy, sortOrder } = sorting;
     const { filters, search, searchFields } = filtering;
 
-    const query = this.buildFilterQuery(filters);
-    
-    if (search && searchFields?.length) {
-      query.$or = searchFields.map(field => ({
-        [field]: { $regex: search, $options: 'i' }
-      }));
-    }
-
     const skip = (page - 1) * limit;
     const sort = { [sortBy || 'createdAt']: sortOrder };
 
     const [items, total] = await Promise.all([
       this.jobModel
-        .find(query)
+        .find()
         .sort(sort)
         .skip(skip)
         .limit(limit),
-      this.jobModel.countDocuments(query)
+      this.jobModel.countDocuments()
     ]);
 
     return {
-      items,
+      items: items.map(job => ({
+        id: job._id.toString(),
+        title: job.title,
+        description: job.description,
+        skills: job.skills,
+        status: job.status
+      })),
       total,
       page,
       limit,
@@ -390,6 +388,12 @@ export class JobService {
     if (!job) {
       throw new NotFoundException('Job not found');
     }
-    return job;
+    return {
+      id: job._id.toString(),
+      title: job.title,
+      description: job.description,
+      skills: job.skills,
+      status: job.status
+    };
   }
 } 

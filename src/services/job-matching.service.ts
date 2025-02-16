@@ -244,4 +244,22 @@ export class JobMatchingService {
     
     return results;
   }
+
+  private mapWorkerProfile(worker: IWorker) {
+    return {
+      id: worker._id.toString(),
+      firstName: worker.firstName,
+      lastName: worker.lastName,
+      email: worker.email,
+      phone: worker.phone,
+      skills: worker.skills,
+      experience: worker.experience,
+      preferredLocation: worker.preferredLocation,
+      expectedSalary: worker.salary?.expected || 0,
+      availability: worker.availability?.status || 'unavailable',
+      languages: worker.languages || [],
+      certifications: worker.documents?.filter(d => d.type === 'certificate').map(d => d.name) || [],
+      reliabilityScore: worker.metrics?.reliabilityScore || 0
+    };
+  }
 } 

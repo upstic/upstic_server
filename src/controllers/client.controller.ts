@@ -18,15 +18,11 @@ export class ClientController {
   @Get()
   @ApiOperation({ 
     summary: 'Get all clients',
-    description: 'Retrieve a list of all clients with optional pagination'
+    description: 'Retrieve a list of all clients'
   })
   @ApiResponse({ status: 200, description: 'List of clients retrieved successfully' })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  async getAllClients(
-    @Query() query: { page?: number; limit?: number }
-  ) {
-    return this.clientService.findAll(query);
+  async getAllClients() {
+    return this.clientService.findAll();
   }
 
   @Post()

@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { IJob, IWorker, IApplication, IMatch } from '../interfaces/models.interface';
 import { NotificationService } from './notification.service';
 import { Logger } from '../utils/logger';
+import { MatchingService } from './matching.service';
 
 const logger = new Logger('AIMatchingService');
 
@@ -33,7 +34,8 @@ export class AIMatchingService {
     @InjectModel('Worker') private readonly workerModel: Model<IWorker>,
     @InjectModel('Application') private readonly applicationModel: Model<IApplication>,
     @InjectModel('Match') private readonly matchModel: Model<IMatch>,
-    private readonly notificationService: NotificationService
+    private readonly notificationService: NotificationService,
+    private readonly matchingService: MatchingService
   ) {}
 
   async findMatchingJobs(workerId: string): Promise<IJob[]> {
@@ -68,11 +70,7 @@ export class AIMatchingService {
     const skillMatch = this.calculateSkillMatch(worker.skills, job.skills);
     const experienceMatch = this.calculateExperienceMatch(worker.experience, job.experience);
     
-    const workerLocation = this.parseLocation(worker.location);
-    const jobLocation = this.parseLocation(job.location);
-    const locationMatch = (workerLocation && jobLocation) 
-      ? this.calculateDistance(workerLocation, jobLocation) <= this.maxDistance ? 1 : 0
-      : 0;
+    const locationMatch = this.calculateLocationMatch(worker, job);
 
     const salaryMatch = this.calculateSalaryMatch(worker.salary, job.salary);
 
@@ -96,6 +94,23 @@ export class AIMatchingService {
 
   private calculateExperienceMatch(workerExp: number, requiredExp: number): number {
     return Math.min(workerExp / requiredExp, 1);
+  }
+
+  private calculateLocationMatch(worker: IWorker, job: IJob): number {
+    try {
+      const workerLocation = this.parseLocation(worker.preferredLocation);
+      const jobLocation = this.parseLocation(job.location);
+      
+      if (!workerLocation || !jobLocation) {
+        return 0;
+      }
+
+      const distance = this.calculateDistance(workerLocation, jobLocation);
+      return Math.max(0, 1 - distance/this.maxDistance);
+    } catch (error) {
+      logger.error('Error calculating location match:', { error });
+      return 0;
+    }
   }
 
   private calculateDistance(point1: Location, point2: Location): number {
@@ -195,11 +210,11 @@ export class AIMatchingService {
         const skillScore = this.calculateSkillMatch(worker.skills, job.skills);
         const expScore = this.calculateExperienceMatch(worker.experience, job.experience);
         
-        const workerLocation = this.parseLocation(worker.location);
+        const workerLocation = this.parseLocation(worker.preferredLocation);
         const jobLocation = this.parseLocation(job.location);
         const distanceScore = (workerLocation && jobLocation)
           ? this.calculateDistance(workerLocation, jobLocation)
-          : Infinity;
+          : this.maxDistance;
 
         const totalScore = (
           skillScore * 0.4 + 
@@ -244,5 +259,15 @@ export class AIMatchingService {
       logger.error('Error calculating salary match:', { error });
       return 0;
     }
+  }
+
+  async getRecommendations(workerId: string): Promise<IJob[]> {
+    // Implementation
+    return [];
+  }
+
+  async getJobInsights(jobId: string): Promise<any> {
+    // Implementation
+    return {};
   }
 }

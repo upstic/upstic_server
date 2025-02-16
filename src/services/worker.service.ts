@@ -3,7 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { IWorker, IApplication } from '../interfaces/models.interface';
 import { logger } from '../utils/logger';
-import { PaginationParamsDto, SortingParamsDto, FilteringParamsDto, PaginatedResponseDto, WorkerResponseDto } from '../interfaces/dto.interface';
+import { PaginationParamsDto, SortingParamsDto, FilteringParamsDto, PaginatedResponseDto } from '../dtos/common.dto';
+import { WorkerResponseDto } from '../dtos/worker.dto';
 
 @Injectable()
 export class WorkerService {
@@ -34,7 +35,21 @@ export class WorkerService {
     ]);
 
     return {
-      items,
+      items: items.map(worker => ({
+        id: worker._id.toString(),
+        firstName: worker.firstName,
+        lastName: worker.lastName,
+        email: worker.email,
+        phone: worker.phone,
+        skills: worker.skills,
+        experience: worker.experience,
+        preferredLocation: worker.preferredLocation,
+        status: 'ACTIVE',
+        rating: 0,
+        completedJobs: 0,
+        createdAt: worker.createdAt || new Date(),
+        updatedAt: worker.updatedAt || new Date()
+      })),
       total,
       page,
       limit,
@@ -65,7 +80,7 @@ export class WorkerService {
     const worker = await this.workerModel.findById(id)
       .select('availability')
       .lean();
-    return worker?.availability || null;
+    return worker?.availability?.schedule || [];
   }
 
   async getApplications(id: string): Promise<IApplication[]> {
@@ -92,12 +107,23 @@ export class WorkerService {
         phone: userData.phone || '',
         skills: [],
         experience: 0,
-        availability: 'available',
         preferredLocation: '',
-        location: '',
+        status: 'ACTIVE',
+        availability: {
+          status: 'available',
+          schedule: []
+        },
         salary: {
           expected: 0,
           currency: 'USD'
+        },
+        languages: [],
+        documents: [],
+        metrics: {
+          reliabilityScore: 0,
+          profileCompleteness: 0,
+          totalPlacements: 0,
+          averageRating: 0
         }
       };
 

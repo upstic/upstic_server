@@ -60,6 +60,23 @@ export class RefreshTokenDto {
   refreshToken: string;
 }
 
+export class UserProfileDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  email: string;
+
+  @ApiProperty()
+  firstName: string;
+
+  @ApiProperty()
+  lastName: string;
+
+  @ApiProperty()
+  role: string;
+}
+
 export class AuthResponseDto {
   @ApiProperty({ description: 'Access token for API requests' })
   @IsString()
@@ -73,23 +90,8 @@ export class AuthResponseDto {
   @IsNumber()
   expiresIn: number;
 
-  @ApiProperty({ description: 'User profile information' })
-  user: {
-    @ApiProperty()
-    id: string;
-
-    @ApiProperty()
-    email: string;
-
-    @ApiProperty()
-    firstName: string;
-
-    @ApiProperty()
-    lastName: string;
-
-    @ApiProperty()
-    role: string;
-  };
+  @ApiProperty({ description: 'User profile information', type: UserProfileDto })
+  user: UserProfileDto;
 }
 
 export class TokenResponseDto {
