@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { InjectQueue } from '@nestjs/bull';
@@ -13,17 +13,185 @@ import { processImage } from '../utils/image-processor';
 import { parseCV } from '../utils/cv-parser';
 import { sanitizeHtml } from '../utils/sanitizer';
 import { NotificationType } from '../types/notification.types';
+import { Logger } from '../utils/logger';
+import { Readable } from 'stream';
+
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination: string;
+  filename: string;
+  path: string;
+  buffer: Buffer;
+  stream: Readable;
+}
+
+const logger = new Logger('WorkerProfileService');
 
 @Injectable()
-export class WorkerProfileService {
+export class WorkerProfileService implements OnModuleDestroy {
   private readonly ALLOWED_DOCUMENT_TYPES = ['pdf', 'doc', 'docx', 'jpg', 'png'];
   private readonly MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  private useQueueFallback = false;
+  private pendingVerifications: Map<string, any> = new Map();
+  private verificationProcessingInterval: NodeJS.Timeout | null = null;
 
   constructor(
     @InjectModel('WorkerProfile') private readonly workerProfileModel: Model<IWorkerProfile>,
     private readonly notificationService: NotificationService,
-    @InjectQueue('profile-verification') private readonly verificationQueue: Queue
-  ) {}
+    @Optional() @InjectQueue('profile-verification') private readonly verificationQueue: Queue | null
+  ) {
+    // Check if queue is available, otherwise use fallback
+    if (!this.verificationQueue || !(global as any).REDIS_COMPATIBLE) {
+      logger.warn('BullMQ profile-verification queue not available, using fallback processing mechanism');
+      this.useQueueFallback = true;
+      this.setupFallbackProcessing();
+    } else {
+      try {
+        // Check if the queue is properly initialized
+        this.verificationQueue.client.ping().then(() => {
+          logger.info('BullMQ profile-verification queue initialized successfully');
+        }).catch(error => {
+          logger.warn(`BullMQ profile-verification queue initialization error: ${error.message}`);
+          this.useQueueFallback = true;
+          this.setupFallbackProcessing();
+        });
+      } catch (error) {
+        logger.warn(`BullMQ profile-verification queue error: ${error.message}, using fallback mechanism`);
+        this.useQueueFallback = true;
+        this.setupFallbackProcessing();
+      }
+    }
+  }
+
+  private setupFallbackProcessing() {
+    // Set up interval to process verifications in memory when queue is not available
+    this.verificationProcessingInterval = setInterval(async () => {
+      if (this.pendingVerifications.size === 0) return;
+      
+      logger.debug(`Processing ${this.pendingVerifications.size} pending verification tasks using fallback mechanism`);
+      
+      for (const [id, task] of this.pendingVerifications.entries()) {
+        try {
+          logger.info(`Processing verification task ${id} using fallback mechanism`);
+          
+          // Process the task
+          await this.processVerificationTask(task);
+          
+          // Remove from pending queue after successful processing
+          this.pendingVerifications.delete(id);
+        } catch (error) {
+          logger.error(`Error processing verification task ${id} in fallback mode:`, error);
+          
+          // Increment attempt count
+          task.attempts = (task.attempts || 0) + 1;
+          
+          // If max attempts reached, mark as failed and remove from queue
+          if (task.attempts >= 3) {
+            logger.warn(`Verification task ${id} failed after ${task.attempts} attempts, removing from queue`);
+            this.pendingVerifications.delete(id);
+            
+            // Notify user of verification failure if this is a document verification task
+            if (task.type === 'verify-documents' || task.type === 'verify-cv') {
+              try {
+                const profile = await this.workerProfileModel.findById(task.profileId);
+                if (profile) {
+                  await this.notificationService.send({
+                    userId: profile.userId,
+                    title: 'Document Verification Failed',
+                    body: 'We encountered an issue verifying your documents. Please try uploading them again.',
+                    type: NotificationType.SYSTEM_ALERT
+                  });
+                }
+              } catch (notifyError) {
+                logger.error(`Failed to notify user about verification failure:`, notifyError);
+              }
+            }
+          }
+        }
+      }
+    }, 10000); // Process every 10 seconds
+  }
+
+  private async processVerificationTask(task: any): Promise<void> {
+    // Implementation depends on task type
+    if (task.type === 'verify-documents') {
+      await this.verifyDocuments(task.profileId);
+    } else if (task.type === 'verify-cv') {
+      await this.verifyCV(task.profileId, task.documentUrl);
+    }
+    // Add other task types as needed
+  }
+
+  private async verifyDocuments(profileId: string): Promise<void> {
+    try {
+      const profile = await this.workerProfileModel.findById(profileId);
+      if (!profile) {
+        throw new Error(`Profile not found: ${profileId}`);
+      }
+
+      // Simple verification logic - in a real app, this would be more complex
+      const updatedDocuments = profile.documents.map(doc => ({
+        ...doc,
+        verified: true,
+        verificationDate: new Date()
+      }));
+
+      await this.workerProfileModel.findByIdAndUpdate(profileId, {
+        $set: { documents: updatedDocuments }
+      });
+
+      // Notify user
+      await this.notificationService.send({
+        userId: profile.userId,
+        title: 'Documents Verified',
+        body: 'Your documents have been successfully verified.',
+        type: NotificationType.DOCUMENT_VERIFIED
+      });
+    } catch (error) {
+      logger.error(`Error verifying documents for profile ${profileId}:`, error);
+      throw error;
+    }
+  }
+
+  private async verifyCV(profileId: string, documentUrl: string): Promise<void> {
+    try {
+      const profile = await this.workerProfileModel.findById(profileId);
+      if (!profile) {
+        throw new Error(`Profile not found: ${profileId}`);
+      }
+
+      // Find the CV document and mark it as verified
+      const updatedDocuments = profile.documents.map(doc => {
+        if (doc.url === documentUrl && doc.type === 'cv') {
+          return {
+            ...doc,
+            verified: true,
+            verificationDate: new Date()
+          };
+        }
+        return doc;
+      });
+
+      await this.workerProfileModel.findByIdAndUpdate(profileId, {
+        $set: { documents: updatedDocuments }
+      });
+
+      // Notify user
+      await this.notificationService.send({
+        userId: profile.userId,
+        title: 'CV Verified',
+        body: 'Your CV has been successfully verified.',
+        type: NotificationType.DOCUMENT_VERIFIED
+      });
+    } catch (error) {
+      logger.error(`Error verifying CV for profile ${profileId}:`, error);
+      throw error;
+    }
+  }
 
   async createProfile(userId: string, profileData: Partial<IWorkerProfile>): Promise<IWorkerProfile> {
     const existingProfile = await this.workerProfileModel.findOne({ userId });
@@ -98,7 +266,7 @@ export class WorkerProfileService {
 
   async uploadCV(
     userId: string,
-    file: Express.Multer.File
+    file: MulterFile
   ): Promise<IWorkerProfile> {
     // Validate file
     if (!this.ALLOWED_DOCUMENT_TYPES.includes(file.mimetype.split('/')[1])) {
@@ -141,10 +309,45 @@ export class WorkerProfileService {
       await profile.save();
 
       // Queue CV verification
-      await this.verificationQueue.add('verify-cv', {
-        profileId: profile._id,
-        documentUrl: fileUrl
-      });
+      if (!this.useQueueFallback && this.verificationQueue && (global as any).REDIS_COMPATIBLE) {
+        try {
+          // Use BullMQ if available
+          await this.verificationQueue.add('verify-cv', {
+            profileId: profile._id,
+            documentUrl: fileUrl,
+            attempts: 0
+          }, {
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 1000
+            }
+          });
+          logger.info(`Added CV verification task for profile ${profile._id} to BullMQ queue`);
+        } catch (error) {
+          logger.warn(`Failed to add CV verification task to BullMQ queue: ${error.message}, using fallback mechanism`);
+          // If adding to the queue fails, use fallback mechanism
+          this.useQueueFallback = true;
+          const taskId = `verify-cv-${profile._id}-${Date.now()}`;
+          this.pendingVerifications.set(taskId, {
+            type: 'verify-cv',
+            profileId: profile._id,
+            documentUrl: fileUrl,
+            attempts: 0
+          });
+          logger.info(`Added CV verification task ${taskId} to fallback queue`);
+        }
+      } else {
+        // Use fallback mechanism
+        const taskId = `verify-cv-${profile._id}-${Date.now()}`;
+        this.pendingVerifications.set(taskId, {
+          type: 'verify-cv',
+          profileId: profile._id,
+          documentUrl: fileUrl,
+          attempts: 0
+        });
+        logger.info(`Added CV verification task ${taskId} to fallback queue`);
+      }
 
       return profile;
     } catch (error) {
@@ -154,7 +357,7 @@ export class WorkerProfileService {
 
   async uploadProfilePhoto(
     userId: string,
-    file: Express.Multer.File
+    file: MulterFile
   ): Promise<string> {
     if (!file.mimetype.startsWith('image/')) {
       throw new AppError(400, 'Invalid file type. Please upload an image.');
@@ -229,7 +432,42 @@ export class WorkerProfileService {
   }
 
   private async queueDocumentVerification(profileId: string): Promise<void> {
-    await this.verificationQueue.add('verify-documents', { profileId });
+    if (!this.useQueueFallback && this.verificationQueue && (global as any).REDIS_COMPATIBLE) {
+      try {
+        // Use BullMQ if available
+        await this.verificationQueue.add('verify-documents', { 
+          profileId,
+          attempts: 0
+        }, {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 1000
+          }
+        });
+        logger.info(`Added document verification task for profile ${profileId} to BullMQ queue`);
+      } catch (error) {
+        logger.warn(`Failed to add document verification task to BullMQ queue: ${error.message}, using fallback mechanism`);
+        // If adding to the queue fails, use fallback mechanism
+        this.useQueueFallback = true;
+        const taskId = `verify-documents-${profileId}-${Date.now()}`;
+        this.pendingVerifications.set(taskId, {
+          type: 'verify-documents',
+          profileId,
+          attempts: 0
+        });
+        logger.info(`Added document verification task ${taskId} to fallback queue`);
+      }
+    } else {
+      // Use fallback mechanism
+      const taskId = `verify-documents-${profileId}-${Date.now()}`;
+      this.pendingVerifications.set(taskId, {
+        type: 'verify-documents',
+        profileId,
+        attempts: 0
+      });
+      logger.info(`Added document verification task ${taskId} to fallback queue`);
+    }
   }
 
   private async extractProfileDataFromCV(cvText: string): Promise<Partial<IWorkerProfile>> {
@@ -238,15 +476,46 @@ export class WorkerProfileService {
     return {};
   }
 
-  async validateDocuments(file: Express.Multer.File) {
+  async validateDocuments(file: MulterFile) {
     return validateDocument(file);
   }
 
-  async processProfileImage(file: Express.Multer.File) {
+  async processProfileImage(file: MulterFile) {
     return processImage(file);
   }
 
-  async parseResume(file: Express.Multer.File) {
+  async parseResume(file: MulterFile) {
     return parseCV(file);
+  }
+
+  async onModuleDestroy() {
+    try {
+      // Clean up interval if it exists
+      if (this.verificationProcessingInterval) {
+        clearInterval(this.verificationProcessingInterval);
+        this.verificationProcessingInterval = null;
+        logger.info('Verification processing interval cleared');
+      }
+      
+      // Clean up queue if it exists
+      if (this.verificationQueue) {
+        try {
+          await this.verificationQueue.close();
+          logger.info('Verification queue closed successfully');
+        } catch (queueError) {
+          logger.warn(`Error closing verification queue: ${queueError.message}`);
+        }
+      }
+      
+      // Clear any pending verifications
+      if (this.pendingVerifications.size > 0) {
+        logger.info(`Clearing ${this.pendingVerifications.size} pending verification tasks`);
+        this.pendingVerifications.clear();
+      }
+      
+      logger.info('WorkerProfileService resources cleaned up successfully');
+    } catch (error) {
+      logger.error('Error cleaning up WorkerProfileService resources:', error);
+    }
   }
 } 

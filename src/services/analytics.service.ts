@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { IJob, IWorker, IApplication, IShift, IReport, ReportType, ReportStatus, ReportFormat, IClient } from '../interfaces/models.interface';
+import { IJob, IWorker, IApplication, IShift, IClient } from '../interfaces/models.interface';
+import { IReport } from '../interfaces/report.interface';
+import { ReportType, ReportFormat } from '../types/report.types';
+import { ReportStatus } from '../models/Report';
 import { Queue } from 'bull';
 import { InjectQueue } from '@nestjs/bull';
 import { Logger } from '../utils/logger';
@@ -39,16 +42,96 @@ interface MetricsOptions {
 
 @Injectable()
 export class AnalyticsService {
+  private useQueueFallback = false;
+  private pendingAnalytics: Map<string, any> = new Map();
+  private analyticsProcessingInterval: NodeJS.Timeout | null = null;
+
   constructor(
     @InjectModel('Job') private readonly jobModel: Model<IJob>,
     @InjectModel('Worker') private readonly workerModel: Model<IWorker>,
     @InjectModel('Application') private readonly applicationModel: Model<IApplication>,
     @InjectModel('Shift') private readonly shiftModel: Model<IShift>,
     @InjectModel('Report') private readonly reportModel: Model<IReport>,
-    @InjectQueue('analytics') private readonly analyticsQueue: Queue,
+    @Optional() @InjectQueue('analytics') private readonly analyticsQueue: Queue | null,
     private readonly notificationService: NotificationService,
     @InjectModel('Client') private readonly clientModel: Model<IClient>
-  ) {}
+  ) {
+    // Check if queue is available, otherwise use fallback
+    if (!this.analyticsQueue || !(global as any).REDIS_COMPATIBLE) {
+      logger.warn('BullMQ analytics queue not available, using fallback processing mechanism');
+      this.useQueueFallback = true;
+      this.setupFallbackProcessing();
+    } else {
+      try {
+        // Check if the queue is properly initialized
+        this.analyticsQueue.client.ping().then(() => {
+          logger.info('BullMQ analytics queue initialized successfully');
+        }).catch(error => {
+          logger.warn(`BullMQ analytics queue initialization error: ${error.message}`);
+          this.useQueueFallback = true;
+          this.setupFallbackProcessing();
+        });
+      } catch (error) {
+        logger.warn(`BullMQ analytics queue error: ${error.message}, using fallback mechanism`);
+        this.useQueueFallback = true;
+        this.setupFallbackProcessing();
+      }
+    }
+  }
+
+  private setupFallbackProcessing() {
+    // Set up interval to process analytics in memory when queue is not available
+    this.analyticsProcessingInterval = setInterval(async () => {
+      if (this.pendingAnalytics.size === 0) return;
+      
+      logger.debug(`Processing ${this.pendingAnalytics.size} pending analytics tasks using fallback mechanism`);
+      
+      for (const [id, task] of this.pendingAnalytics.entries()) {
+        try {
+          logger.info(`Processing analytics task ${id} using fallback mechanism`);
+          
+          // Process the task
+          await this.processAnalyticsTask(task);
+          
+          // Remove from pending queue after successful processing
+          this.pendingAnalytics.delete(id);
+        } catch (error) {
+          logger.error(`Error processing analytics task ${id} in fallback mode:`, error);
+          
+          // Increment attempt count
+          task.attempts = (task.attempts || 0) + 1;
+          
+          // If max attempts reached, mark as failed and remove from queue
+          if (task.attempts >= 3) {
+            logger.warn(`Analytics task ${id} failed after ${task.attempts} attempts, removing from queue`);
+            this.pendingAnalytics.delete(id);
+            
+            // Update report status if this is a report generation task
+            if (task.reportId) {
+              try {
+                await this.reportModel.findByIdAndUpdate(task.reportId, {
+                  status: ReportStatus.FAILED,
+                  error: error instanceof Error ? error.message : 'Unknown error after multiple attempts'
+                });
+              } catch (updateError) {
+                logger.error(`Failed to update report status for ${task.reportId}:`, updateError);
+              }
+            }
+          }
+        }
+      }
+    }, 10000); // Process every 10 seconds
+  }
+
+  private async processAnalyticsTask(task: any): Promise<void> {
+    // Implementation depends on task type
+    if (task.type === 'generateReport') {
+      await this.generateReport(task.options);
+    } else if (task.type === 'calculateMetrics') {
+      await this.getMetrics(task.options);
+    }
+    // Add other task types as needed
+  }
 
   async generateReport(options: {
     startDate: Date;
@@ -61,6 +144,7 @@ export class AnalyticsService {
     sortBy?: string;
     format: ReportFormat;
     type: ReportType;
+    requestedBy?: string;
   }): Promise<IReport> {
     let createdReport: IReport;
     
@@ -69,9 +153,47 @@ export class AnalyticsService {
         status: ReportStatus.GENERATING,
         format: options.format,
         type: options.type,
-        createdAt: new Date()
+        name: `${options.type} Report`,
+        createdAt: new Date(),
+        metadata: {
+          requestedBy: options.requestedBy || 'system',
+          requestedAt: new Date(),
+          version: 1,
+          attempts: 0
+        }
       });
 
+      // If using queue and it's available
+      if (!this.useQueueFallback && this.analyticsQueue) {
+        await this.analyticsQueue.add('generateReport', {
+          reportId: createdReport._id.toString(),
+          options
+        }, {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 1000
+          }
+        });
+        
+        return createdReport;
+      } 
+      
+      // Otherwise process directly or add to fallback queue
+      if (this.useQueueFallback) {
+        // Add to pending tasks for fallback processing
+        const taskId = `report_${createdReport._id.toString()}`;
+        this.pendingAnalytics.set(taskId, {
+          type: 'generateReport',
+          reportId: createdReport._id.toString(),
+          options,
+          attempts: 0
+        });
+        
+        return createdReport;
+      }
+
+      // Direct processing if neither queue nor fallback is used
       const metrics = await this.getMetrics(options);
       const buffer = await this.formatReport(metrics, options.format);
 
@@ -81,14 +203,16 @@ export class AnalyticsService {
         {
           status: ReportStatus.COMPLETED,
           generatedFileUrl: await this.uploadFile(buffer, options.format),
-          lastGenerated: new Date()
+          lastGenerated: new Date(),
+          'metadata.completedAt': new Date(),
+          'metadata.duration': Date.now() - new Date(createdReport.metadata.requestedAt).getTime()
         },
         { new: true }
       );
 
-      // Notify recipients
-      if (updatedReport.recipients?.length) {
-        for (const recipient of updatedReport.recipients) {
+      // Notify recipients if they exist in the schedule
+      if (updatedReport.schedule?.recipients?.length) {
+        for (const recipient of updatedReport.schedule.recipients) {
           await this.notificationService.sendReportNotification(
             recipient, 
             updatedReport._id.toString()
@@ -183,7 +307,11 @@ export class AnalyticsService {
           }
           break;
 
-        case ReportType.PLACEMENT:
+        case ReportType.WORKER_ANALYTICS:
+          metrics = await this.getWorkerMetrics(options);
+          break;
+
+        case ReportType.PLACEMENT_ANALYTICS:
           metrics = await this.getPlacementMetrics(options);
           break;
 
@@ -262,18 +390,27 @@ export class AnalyticsService {
   async formatReport(data: any[], format: ReportFormat): Promise<Buffer> {
     try {
       const columns = Object.keys(data[0] || {});
+      
+      // Create a simple report object to pass to the generators
+      const reportObj = {
+        type: ReportType.JOB_ANALYTICS,
+        format,
+        data,
+        columns
+      };
+      
       switch (format) {
         case ReportFormat.PDF:
-          return generatePDF(data, columns);
+          return generatePDF(reportObj as any);
         case ReportFormat.EXCEL:
-          return generateExcel(data, columns);
+          return generateExcel(reportObj as any);
         case ReportFormat.CSV:
           return Buffer.from(this.generateCSV(data, columns));
         default:
           throw new Error(`Unsupported format: ${format}`);
       }
     } catch (error) {
-      logger.error('Error formatting report:', { error, format });
+      logger.error('Error formatting report:', error);
       throw error;
     }
   }
@@ -330,5 +467,62 @@ export class AnalyticsService {
 
   async getClientStats(): Promise<IClient[]> {
     return this.clientModel.find().lean();
+  }
+
+  // Add worker metrics method
+  async getWorkerMetrics(options: MetricsOptions): Promise<any[]> {
+    try {
+      const query: any = {
+        createdAt: {
+          $gte: options.startDate,
+          $lte: options.endDate
+        }
+      };
+      
+      if (options.workerId) {
+        query._id = options.workerId;
+      }
+      
+      if (options.clientId) {
+        // Find applications for this client
+        const applications = await this.applicationModel.find({
+          clientId: options.clientId
+        }).select('workerId');
+        
+        const workerIds = applications.map(app => app.workerId);
+        query._id = { $in: workerIds };
+      }
+      
+      const workers = await this.workerModel.find(query);
+      
+      return workers.map(worker => ({
+        workerId: worker._id,
+        name: `${worker.firstName} ${worker.lastName}`,
+        email: worker.email,
+        skills: worker.skills,
+        experience: worker.experience,
+        metrics: worker.metrics
+      }));
+    } catch (error) {
+      logger.error('Error getting worker metrics:', error);
+      throw error;
+    }
+  }
+
+  async onModuleDestroy() {
+    try {
+      if (this.analyticsProcessingInterval) {
+        clearInterval(this.analyticsProcessingInterval);
+        this.analyticsProcessingInterval = null;
+      }
+      
+      if (this.analyticsQueue) {
+        await this.analyticsQueue.close();
+      }
+      
+      logger.info('Analytics service resources cleaned up successfully');
+    } catch (error) {
+      logger.error('Error cleaning up analytics service resources:', error);
+    }
   }
 }

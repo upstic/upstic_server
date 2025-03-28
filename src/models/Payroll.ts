@@ -14,9 +14,16 @@ export enum PaymentMethod {
   WIRE = 'wire'
 }
 
+export enum PaymentStatus {
+  PENDING = 'pending',
+  PROCESSED = 'processed',
+  FAILED = 'failed'
+}
+
 export interface IPayroll {
   workerId: string;
   clientId: string;
+  jobId?: string;
   periodStart: Date;
   periodEnd: Date;
   status: PayrollStatus;
@@ -35,12 +42,23 @@ export interface IPayroll {
     insurance: number;
     other: number;
     totalDeductions: number;
+    taxBreakdown?: {
+      incomeTax: number;
+      nationalInsurance: number;
+      studentLoan?: number;
+      pension?: number;
+      other?: number;
+    };
+    taxCode?: string;
   };
   netAmount: number;
   paymentDetails: {
     method: PaymentMethod;
     processedAt?: Date;
     reference?: string;
+    status?: PaymentStatus;
+    paymentDate?: Date;
+    failureReason?: string;
   };
   metadata: {
     createdBy: string;
@@ -63,6 +81,10 @@ const payrollSchema = new Schema<IPayroll>({
     type: String,
     ref: 'Client',
     required: true
+  },
+  jobId: {
+    type: String,
+    ref: 'Job'
   },
   periodStart: {
     type: Date,
@@ -127,6 +149,32 @@ const payrollSchema = new Schema<IPayroll>({
     totalDeductions: {
       type: Number,
       required: true
+    },
+    taxBreakdown: {
+      incomeTax: {
+        type: Number,
+        default: 0
+      },
+      nationalInsurance: {
+        type: Number,
+        default: 0
+      },
+      studentLoan: {
+        type: Number,
+        default: 0
+      },
+      pension: {
+        type: Number,
+        default: 0
+      },
+      other: {
+        type: Number,
+        default: 0
+      }
+    },
+    taxCode: {
+      type: String,
+      trim: true
     }
   },
   netAmount: {
@@ -140,7 +188,14 @@ const payrollSchema = new Schema<IPayroll>({
       required: true
     },
     processedAt: Date,
-    reference: String
+    reference: String,
+    status: {
+      type: String,
+      enum: Object.values(PaymentStatus),
+      default: PaymentStatus.PENDING
+    },
+    paymentDate: Date,
+    failureReason: String
   },
   metadata: {
     createdBy: {
@@ -177,5 +232,15 @@ payrollSchema.index({ workerId: 1, periodStart: 1, periodEnd: 1 });
 payrollSchema.index({ clientId: 1, status: 1 });
 payrollSchema.index({ status: 1, 'paymentDetails.processedAt': 1 });
 payrollSchema.index({ periodStart: 1, periodEnd: 1 });
+payrollSchema.index({ jobId: 1 });
+payrollSchema.index({ 'paymentDetails.status': 1, 'paymentDetails.paymentDate': 1 });
+
+// Pre-save middleware to ensure netAmount is calculated correctly
+payrollSchema.pre('save', function(next) {
+  if (this.earnings && this.deductions) {
+    this.netAmount = this.earnings.totalAmount - this.deductions.totalDeductions;
+  }
+  next();
+});
 
 export const Payroll = mongoose.model<IPayroll>('Payroll', payrollSchema); 

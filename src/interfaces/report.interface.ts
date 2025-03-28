@@ -1,80 +1,48 @@
-export enum ReportType {
-  // Staffing Reports
-  WORKER_UTILIZATION = 'worker_utilization',
-  SHIFT_COVERAGE = 'shift_coverage',
-  ATTENDANCE = 'attendance',
-  TIME_AND_ATTENDANCE = 'time_and_attendance',
-  
-  // Financial Reports
-  PAYROLL_SUMMARY = 'payroll_summary',
-  BILLING_SUMMARY = 'billing_summary',
-  REVENUE_BY_CLIENT = 'revenue_by_client',
-  
-  // Client Reports
-  CLIENT_SATISFACTION = 'client_satisfaction',
-  CLIENT_USAGE = 'client_usage',
-  
-  // Compliance Reports
-  CERTIFICATION_STATUS = 'certification_status',
-  DOCUMENT_COMPLIANCE = 'document_compliance',
-  
-  // Performance Reports
-  WORKER_PERFORMANCE = 'worker_performance',
-  BRANCH_PERFORMANCE = 'branch_performance'
-}
+import { Document } from 'mongoose';
+import { ReportType, ReportFormat } from '../types/report.types';
+import { ReportStatus } from '../models/Report';
 
-export enum ReportFormat {
-  PDF = 'pdf',
-  CSV = 'csv',
-  EXCEL = 'excel',
-  JSON = 'json'
-}
-
-export enum ReportStatus {
-  QUEUED = 'queued',
-  GENERATING = 'generating',
-  COMPLETED = 'completed',
-  FAILED = 'failed'
-}
-
-export interface ReportSchedule {
-  frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
-  dayOfWeek?: number;
-  dayOfMonth?: number;
-  time: string;
-  nextRun: Date;
-  recipients: string[];
-}
-
-export interface ReportParameters {
-  startDate: Date;
-  endDate: Date;
-  clientId?: string;
-  branchId?: string;
-  workerId?: string;
-  filters?: Record<string, any>;
-}
-
-export interface ReportResult {
-  fileKey?: string;
-  fileUrl?: string;
-  generatedAt?: Date;
-  error?: string;
-}
-
-export interface IReport {
-  _id?: string;
+export interface IReport extends Document {
   type: ReportType;
   name: string;
   description?: string;
   format: ReportFormat;
+  parameters: {
+    startDate: Date;
+    endDate: Date;
+    clientId?: string;
+    branchId?: string;
+    workerId?: string;
+    filters?: Record<string, any>;
+    groupBy?: string[];
+    sortBy?: string;
+    format: ReportFormat;
+  };
   status: ReportStatus;
-  parameters: ReportParameters;
-  schedule?: ReportSchedule;
-  result?: ReportResult;
+  progress?: number;
+  result?: {
+    fileUrl?: string;
+    fileKey?: string;
+    summary?: Record<string, any>;
+    error?: string;
+  };
   metadata: {
     requestedBy: string;
     requestedAt: Date;
+    completedAt?: Date;
+    duration?: number;
     version: number;
+    attempts?: number;
+    jobId?: string;
+  };
+  schedule?: {
+    frequency: 'daily' | 'weekly' | 'monthly';
+    dayOfWeek?: number;
+    dayOfMonth?: number;
+    time: string;
+    timezone: string;
+    recipients: string[];
+    lastRun?: Date;
+    nextRun?: Date;
   };
 }

@@ -8,12 +8,14 @@ import { IReport } from '../models/Report';
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
 export class ReportController {
+  constructor(private readonly reportService: ReportService) {}
+
   @Post()
   async requestReport(
     @CurrentUser() user: JwtPayload,
     @Body() reportData: Partial<IReport>
   ) {
-    return await ReportService.requestReport(user.sub, reportData);
+    return await this.reportService.requestReport(user.sub, reportData);
   }
 
   @Get(':id')
@@ -21,7 +23,7 @@ export class ReportController {
     @CurrentUser() user: JwtPayload,
     @Param('id') reportId: string
   ) {
-    return await ReportService.getReport(reportId, user.sub);
+    return await this.reportService.getReport(reportId, user.sub);
   }
 
   @Get()
@@ -32,9 +34,16 @@ export class ReportController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string
   ) {
-    // Since getReports is not available, we'll use getReport for now
+    // Since there's no dedicated method to list reports, we'll implement a basic solution
     // TODO: Implement proper list functionality in ReportService
-    return await ReportService.getReport(user.sub);
+    
+    // For now, we'll return an empty array with a message
+    // This should be replaced with actual implementation when available
+    return {
+      reports: [],
+      message: 'Report listing functionality is not yet implemented',
+      filters: { status, type, startDate, endDate }
+    };
   }
 
   @Delete(':id')
@@ -42,7 +51,7 @@ export class ReportController {
     @CurrentUser() user: JwtPayload,
     @Param('id') reportId: string
   ) {
-    await ReportService.cancelReport(reportId, user.sub);
+    await this.reportService.cancelReport(reportId, user.sub);
     return { message: 'Report cancelled successfully' };
   }
 
@@ -51,7 +60,7 @@ export class ReportController {
     @CurrentUser() user: JwtPayload,
     @Param('id') reportId: string
   ) {
-    const report = await ReportService.getReport(reportId, user.sub);
+    const report = await this.reportService.getReport(reportId, user.sub);
     if (!report.result?.fileUrl) {
       throw new Error('Report file not available');
     }
@@ -66,7 +75,7 @@ export class ReportController {
     if (!reportData.schedule) {
       throw new Error('Schedule parameters are required');
     }
-    return await ReportService.scheduleReport(user.sub, reportData);
+    return await this.reportService.scheduleReport(user.sub, reportData);
   }
 
   @Put('schedule/:id')
@@ -75,9 +84,16 @@ export class ReportController {
     @Param('id') reportId: string,
     @Body() updateData: Partial<IReport>
   ) {
-    return await ReportService.scheduleReport(user.sub, {
+    // First get the existing report to update it properly
+    const existingReport = await this.reportService.getReport(reportId, user.sub);
+    
+    // Create a new report data object with the existing report ID
+    // We don't add reportId to updateData since it's not part of IReport
+    return await this.reportService.scheduleReport(user.sub, {
       ...updateData,
-      reportId
+      // Use the existing report's type and name if not provided in the update
+      type: updateData.type || existingReport.type,
+      name: updateData.name || existingReport.name
     });
   }
 
@@ -86,7 +102,7 @@ export class ReportController {
     @CurrentUser() user: JwtPayload,
     @Param('id') reportId: string
   ) {
-    await ReportService.cancelReport(reportId, user.sub);
+    await this.reportService.cancelReport(reportId, user.sub);
     return { message: 'Scheduled report cancelled successfully' };
   }
 }

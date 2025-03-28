@@ -9,6 +9,7 @@ import { Model } from 'mongoose';
 import { EmailLog } from '../models/EmailLog';
 import { logger } from '../utils/logger';
 import { emailConfig } from '../config/email.config';
+import { IInterview } from '../interfaces/models.interface';
 
 @Injectable()
 export class EmailService {
@@ -130,6 +131,18 @@ export class EmailService {
       .find(query)
       .sort({ timestamp: -1 })
       .limit(filters.limit || 100);
+  }
+
+  async sendInterviewScheduled(interview: IInterview): Promise<void> {
+    // Implementation
+  }
+
+  async sendInterviewRescheduled(interview: IInterview): Promise<void> {
+    // Implementation
+  }
+
+  async sendInterviewFeedbackSubmitted(interview: IInterview): Promise<void> {
+    // Implementation
   }
 }
 

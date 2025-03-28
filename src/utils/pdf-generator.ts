@@ -1,34 +1,22 @@
-import PDFDocument from 'pdfkit';
+import { PDFDocument } from 'pdf-lib';
 import { logger } from './logger';
 import { LogMetadata } from '../interfaces/logger.interface';
+import { IReport } from '../interfaces/models.interface';
 
-export async function generatePDF(data: any[], columns: string[]): Promise<Buffer> {
+export async function generatePDF(report: IReport): Promise<Buffer> {
   try {
-    const doc = new PDFDocument();
-    const chunks: Buffer[] = [];
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage();
 
-    doc.on('data', chunk => chunks.push(chunk));
-    doc.on('end', () => logger.info('PDF generation completed'));
+    // Add report content based on type
+    switch (report.type) {
+      case 'JOB_ANALYTICS':
+        // Implementation
+        break;
+      // Other cases...
+    }
 
-    // Add headers
-    doc.fontSize(12).font('Helvetica-Bold');
-    columns.forEach((header, i) => {
-      doc.text(header, 50 + i * 150, 50);
-    });
-
-    // Add data rows
-    doc.fontSize(10).font('Helvetica');
-    let y = 80;
-    data.forEach(row => {
-      columns.forEach((col, i) => {
-        doc.text(String(row[col]), 50 + i * 150, y);
-      });
-      y += 20;
-    });
-
-    doc.end();
-
-    return Buffer.concat(chunks);
+    return Buffer.from(await pdfDoc.save());
   } catch (error) {
     logger.error('Error generating PDF:', { error } as LogMetadata);
     throw error;

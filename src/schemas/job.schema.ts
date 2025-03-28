@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { JobStatus } from '../interfaces/models.interface';
 
 export const JobSchema = new Schema({
   title: { type: String, required: true },
@@ -12,9 +13,19 @@ export const JobSchema = new Schema({
     max: Number,
     currency: String
   },
-  status: { type: String, required: true },
+  status: {
+    type: String,
+    enum: Object.values(JobStatus),
+    default: JobStatus.DRAFT
+  },
+  publishedAt: {
+    type: Date,
+    default: null
+  },
   startDate: Date,
   endDate: Date,
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
+}, {
+  timestamps: true
 }); 

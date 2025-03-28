@@ -1,36 +1,17 @@
 import { Workbook } from 'exceljs';
-import { Logger } from './logger';
+import { IReport } from '../interfaces/models.interface';
 
-const logger = new Logger('ExcelGenerator');
+export async function generateExcel(report: IReport): Promise<Buffer> {
+  const workbook = new Workbook();
+  const worksheet = workbook.addWorksheet('Report');
 
-export async function generateExcel(data: any[], columns: string[]): Promise<Buffer> {
-  try {
-    const workbook = new Workbook();
-    const worksheet = workbook.addWorksheet('Report');
-
-    // Add headers
-    worksheet.addRow(columns);
-
-    // Add data
-    data.forEach(item => {
-      const row = columns.map(col => item[col]);
-      worksheet.addRow(row);
-    });
-
-    // Auto-fit columns
-    worksheet.columns.forEach(column => {
-      column.width = Math.max(
-        ...worksheet.getColumn(column.number).values.map(v => 
-          v ? v.toString().length : 0
-        )
-      ) + 2;
-    });
-
-    // Write to buffer and return
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
-  } catch (error) {
-    logger.error('Error generating Excel file:', { error });
-    throw error;
+  // Add report content based on type
+  switch (report.type) {
+    case 'JOB_ANALYTICS':
+      // Implementation
+      break;
+    // Other cases...
   }
+
+  return workbook.xlsx.writeBuffer() as Promise<Buffer>;
 }

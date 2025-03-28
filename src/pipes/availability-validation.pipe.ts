@@ -1,9 +1,9 @@
 import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
-import { TimeSlotDto, UpdateAvailabilityDto } from '../dtos/availability.dto';
+import { CreateAvailabilityDto, TimeSlotDto } from '../dtos/availability.dto';
 
 @Injectable()
 export class AvailabilityValidationPipe implements PipeTransform {
-  transform(value: UpdateAvailabilityDto) {
+  transform(value: CreateAvailabilityDto) {
     if (this.hasTimeSlotConflicts(value)) {
       throw new BadRequestException('Time slot conflicts detected in schedule');
     }
@@ -15,7 +15,7 @@ export class AvailabilityValidationPipe implements PipeTransform {
     return value;
   }
 
-  private hasTimeSlotConflicts(availability: UpdateAvailabilityDto): boolean {
+  private hasTimeSlotConflicts(availability: CreateAvailabilityDto): boolean {
     // Check regular schedule conflicts
     for (const schedule of availability.regularSchedule) {
       const slots = schedule.shifts;
@@ -61,7 +61,7 @@ export class AvailabilityValidationPipe implements PipeTransform {
     return hours * 60 + minutes;
   }
 
-  private exceedsMaxHours(availability: UpdateAvailabilityDto): boolean {
+  private exceedsMaxHours(availability: CreateAvailabilityDto): boolean {
     const maxWeeklyMinutes = availability.maxWeeklyHours * 60;
     let totalMinutes = 0;
 

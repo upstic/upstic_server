@@ -1,6 +1,7 @@
 import { Document, Types } from 'mongoose';
 import { UserRole } from '../models/User';
 import { DayOfWeek, ShiftType } from '../dtos/availability.dto';
+import { ReportType } from '../types/report.types';
 
 export interface IContact {
   _id?: Types.ObjectId;
@@ -25,7 +26,19 @@ export interface IClient extends Document {
   updatedAt: Date;
 }
 
-export interface IWorker {
+export interface IWorkerAvailability {
+  status: string;
+  schedule: Array<{
+    day: string;
+    isAvailable: boolean;
+    shifts?: Array<{
+      startTime: string;
+      endTime: string;
+    }>;
+  }>;
+}
+
+export interface IWorker extends Document {
   _id: Types.ObjectId;
   userId: string;
   firstName: string;
@@ -36,17 +49,7 @@ export interface IWorker {
   experience: number;
   preferredLocation: string;
   status: string;
-  availability: {
-    status: string;
-    schedule: Array<{
-      day: string;
-      isAvailable: boolean;
-      shifts?: Array<{
-        startTime: string;
-        endTime: string;
-      }>;
-    }>;
-  };
+  availability: IWorkerAvailability;
   salary: {
     expected: number;
     currency: string;
@@ -84,7 +87,8 @@ export interface IJob extends Document {
     max: number;
     currency: string;
   };
-  status: string;
+  status: JobStatus;
+  publishedAt: Date | null;
   startDate: Date;
   endDate?: Date;
   jobType: string;
@@ -99,7 +103,7 @@ export interface IJob extends Document {
   updatedAt: Date;
 }
 
-export interface IApplication {
+export interface IApplication extends Document {
   _id: Types.ObjectId;
   clientId: Types.ObjectId;
   workerId: Types.ObjectId;
@@ -108,6 +112,12 @@ export interface IApplication {
   startDate: Date;
   endDate: Date;
   rate: number;
+  timeline: Array<{
+    action: string;
+    status: string;
+    note?: string;
+    timestamp: Date;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -126,10 +136,13 @@ export interface IShift {
 }
 
 export interface IDocument extends Document {
-  _id: string;
   name: string;
   type: string;
+  description?: string;
+  tags?: string[];
   url: string;
+  workerId: Types.ObjectId;
+  status: string;
   expiryDate?: Date;
   isVerified: boolean;
   createdAt: Date;
@@ -138,7 +151,7 @@ export interface IDocument extends Document {
 
 export interface IReport extends Document {
   _id: Types.ObjectId;
-  type: string;
+  type: ReportType;
   format: string;
   status: string;
   parameters?: any;
@@ -180,10 +193,12 @@ export enum WorkerStatus {
 }
 
 export enum JobStatus {
+  DRAFT = 'DRAFT',
   OPEN = 'OPEN',
   IN_PROGRESS = 'IN_PROGRESS',
   COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED'
+  CANCELLED = 'CANCELLED',
+  CLOSED = 'CLOSED'
 }
 
 export enum ApplicationStatus {
@@ -206,13 +221,6 @@ export enum DocumentType {
   CERTIFICATION = 'CERTIFICATION',
   BACKGROUND_CHECK = 'BACKGROUND_CHECK',
   OTHER = 'OTHER'
-}
-
-export enum ReportType {
-  PLACEMENT = 'PLACEMENT',
-  FINANCIAL = 'FINANCIAL',
-  COMPLIANCE = 'COMPLIANCE',
-  PERFORMANCE = 'PERFORMANCE'
 }
 
 export enum ReportFormat {
@@ -390,4 +398,25 @@ export interface IAvailability extends Document {
     preferredShiftTypes?: ShiftType[];
   };
   lastUpdated: Date;
+}
+
+export interface IInterview extends Document {
+  _id: Types.ObjectId;
+  candidateId: string;
+  candidateName: string;
+  interviewers: string[];
+  hiringManagerId: string;
+  recruiterId?: string;
+  scheduledAt: Date;
+  duration: number;
+  type: 'online' | 'in-person' | 'phone';
+  location?: string;
+  status: 'scheduled' | 'rescheduled' | 'completed' | 'cancelled';
+  reschedulingReason?: string;
+  feedback?: {
+    rating: number;
+    feedback: string;
+    skills: string[];
+    submittedAt: Date;
+  };
 }

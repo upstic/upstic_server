@@ -15,6 +15,7 @@ interface MatchResult {
     experienceMatch: number;
     locationMatch: number;
     salaryMatch: number;
+    availabilityMatch: number;
   };
 }
 
@@ -69,12 +70,17 @@ export class AIMatchingService {
   private async calculateMatch(worker: IWorker, job: IJob): Promise<MatchResult> {
     const skillMatch = this.calculateSkillMatch(worker.skills, job.skills);
     const experienceMatch = this.calculateExperienceMatch(worker.experience, job.experience);
-    
     const locationMatch = this.calculateLocationMatch(worker, job);
-
     const salaryMatch = this.calculateSalaryMatch(worker.salary, job.salary);
+    const availabilityMatch = await this.calculateAvailabilityMatch(worker, job);
 
-    const score = (skillMatch + experienceMatch + locationMatch + salaryMatch) / 4;
+    const score = (
+      skillMatch * 0.3 + 
+      experienceMatch * 0.2 + 
+      locationMatch * 0.2 + 
+      salaryMatch * 0.15 + 
+      availabilityMatch * 0.15
+    );
 
     return {
       score,
@@ -82,7 +88,8 @@ export class AIMatchingService {
         skillMatch,
         experienceMatch,
         locationMatch,
-        salaryMatch
+        salaryMatch,
+        availabilityMatch
       }
     };
   }
@@ -261,13 +268,197 @@ export class AIMatchingService {
     }
   }
 
-  async getRecommendations(workerId: string): Promise<IJob[]> {
-    // Implementation
-    return [];
+  private async calculateAvailabilityMatch(worker: IWorker, job: IJob): Promise<number> {
+    try {
+      if (!worker.availability?.status || worker.availability.status !== 'available') {
+        return 0;
+      }
+
+      // Check if job schedule overlaps with worker availability
+      const jobStart = new Date(job.startDate);
+      const jobEnd = job.endDate ? new Date(job.endDate) : null;
+
+      // Get worker's availability schedule
+      const workerSchedule = worker.availability.schedule || [];
+      
+      // Check if worker is available during job period
+      const isAvailable = workerSchedule.some(slot => {
+        if (!slot.isAvailable || !slot.shifts?.length) {
+          return false;
+        }
+
+        // Check if any shift in the slot overlaps with job period
+        return slot.shifts.some(shift => {
+          const shiftStart = new Date(shift.startTime);
+          const shiftEnd = new Date(shift.endTime);
+          
+          return (
+            shiftStart <= jobStart && 
+            (!jobEnd || shiftEnd >= jobEnd)
+          );
+        });
+      });
+
+      return isAvailable ? 1 : 0;
+    } catch (error) {
+      logger.error('Error calculating availability match:', { error });
+      return 0;
+    }
   }
 
-  async getJobInsights(jobId: string): Promise<any> {
-    // Implementation
-    return {};
+  async getRecommendations(workerId: string): Promise<IJob[]> {
+    try {
+      const worker = await this.workerModel.findById(workerId);
+      if (!worker) {
+        throw new Error('Worker not found');
+      }
+
+      // Get worker's application history
+      const applications = await this.applicationModel.find({ 
+        workerId: worker._id,
+        status: { $in: ['accepted', 'completed'] }
+      }).populate('jobId');
+
+      // Extract job preferences from successful applications
+      const preferredSkills = new Set<string>();
+      const preferredLocations = new Set<string>();
+      let avgSalary = 0;
+
+      applications.forEach(app => {
+        const jobDoc = app.jobId as unknown;
+        const job = jobDoc as IJob;
+        job.skills?.forEach(skill => preferredSkills.add(skill));
+        if (job.location?.address) preferredLocations.add(job.location.address);
+        if (job.salary?.max) avgSalary += job.salary.max;
+      });
+
+      if (applications.length > 0) {
+        avgSalary /= applications.length;
+      }
+
+      // Find jobs matching worker's preferences
+      const recommendedJobs = await this.jobModel.find({
+        status: 'active',
+        _id: { $nin: applications.map(app => app.jobId) }, // Exclude applied jobs
+        $or: [
+          { skills: { $in: Array.from(preferredSkills) } },
+          { location: { $in: Array.from(preferredLocations) } },
+          { 'salary.max': { $gte: avgSalary * 0.8, $lte: avgSalary * 1.2 } }
+        ]
+      }).limit(10);
+
+      // Sort by match score
+      const scoredJobs = await Promise.all(
+        recommendedJobs.map(async job => {
+          const match = await this.calculateMatch(worker, job);
+          return { job, score: match.score };
+        })
+      );
+
+      return scoredJobs
+        .sort((a, b) => b.score - a.score)
+        .map(item => item.job);
+
+    } catch (error) {
+      logger.error('Error getting recommendations:', { error, workerId });
+      throw error;
+    }
+  }
+
+  async getJobInsights(jobId: string): Promise<{
+    totalCandidates: number;
+    averageScore: number;
+    skillGaps: string[];
+    locationHeatmap: Array<{ location: string; count: number }>;
+    salaryRange: { min: number; max: number; average: number };
+    availabilityStats: { available: number; partial: number; unavailable: number };
+  }> {
+    try {
+      const job = await this.jobModel.findById(jobId);
+      if (!job) {
+        throw new Error('Job not found');
+      }
+
+      // Get all matches for this job
+      const matches = await this.matchModel.find({ jobId })
+        .populate('workerId')
+        .lean();
+
+      // Calculate average score
+      const scores = matches.map(m => m.score);
+      const averageScore = scores.length > 0 
+        ? scores.reduce((a, b) => a + b) / scores.length 
+        : 0;
+
+      // Analyze skill gaps
+      const workers = matches.map(m => {
+        const workerDoc = m.workerId as unknown;
+        return workerDoc as IWorker;
+      });
+
+      const skillCounts = new Map<string, number>();
+      workers.forEach(worker => {
+        worker.skills?.forEach(skill => {
+          skillCounts.set(skill, (skillCounts.get(skill) || 0) + 1);
+        });
+      });
+
+      const skillGaps = job.skills.filter(skill => 
+        !skillCounts.has(skill) || 
+        (skillCounts.get(skill) || 0) < workers.length * 0.5
+      );
+
+      // Generate location heatmap
+      const locationCounts = new Map<string, number>();
+      workers.forEach(worker => {
+        if (worker.preferredLocation) {
+          locationCounts.set(
+            worker.preferredLocation,
+            (locationCounts.get(worker.preferredLocation) || 0) + 1
+          );
+        }
+      });
+
+      // Calculate salary statistics
+      const salaries = workers
+        .map(w => w.salary?.expected || 0)
+        .filter(s => s > 0);
+      
+      const salaryRange = {
+        min: Math.min(...salaries),
+        max: Math.max(...salaries),
+        average: salaries.reduce((a, b) => a + b, 0) / salaries.length
+      };
+
+      // Analyze availability
+      const availabilityStats = {
+        available: 0,
+        partial: 0,
+        unavailable: 0
+      };
+
+      for (const worker of workers) {
+        const availabilityMatch = await this.calculateAvailabilityMatch(worker, job);
+        if (availabilityMatch >= 0.8) availabilityStats.available++;
+        else if (availabilityMatch > 0) availabilityStats.partial++;
+        else availabilityStats.unavailable++;
+      }
+
+      return {
+        totalCandidates: matches.length,
+        averageScore,
+        skillGaps,
+        locationHeatmap: Array.from(locationCounts.entries()).map(([location, count]) => ({
+          location,
+          count
+        })),
+        salaryRange,
+        availabilityStats
+      };
+
+    } catch (error) {
+      logger.error('Error getting job insights:', { error, jobId });
+      throw error;
+    }
   }
 }

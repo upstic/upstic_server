@@ -13,6 +13,7 @@ import { IApplication, IWorkerProfile } from '../interfaces/models.interface';
 import { PaginationParamsDto, SortingParamsDto, PaginatedResponseDto } from '../dtos/common.dto';
 import { JobResponseDto } from '../dtos/job.dto';
 import { FilterConditionDto, FilterOperator, FilteringParamsDto } from '../dtos/common.dto';
+import { JobSearchParamsDto } from '../dtos/job.dto';
 
 export interface JobSearchParams {
   query?: string;
@@ -395,5 +396,59 @@ export class JobService {
       skills: job.skills,
       status: job.status
     };
+  }
+
+  async search(query: JobSearchParamsDto): Promise<IJob[]> {
+    try {
+      const searchQuery: any = { status: 'active' };
+
+      if (query.query) {
+        searchQuery.$or = [
+          { title: new RegExp(query.query, 'i') },
+          { description: new RegExp(query.query, 'i') }
+        ];
+      }
+
+      if (query.location) {
+        searchQuery.location = {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: query.location.coordinates
+            },
+            $maxDistance: query.location.maxDistance || 10000
+          }
+        };
+      }
+
+      return await this.jobModel.find(searchQuery);
+    } catch (error) {
+      logger.error('Error searching jobs:', error);
+      throw error;
+    }
+  }
+
+  async publish(id: string): Promise<IJob> {
+    try {
+      const job = await this.jobModel.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            status: JobStatus.OPEN,
+            publishedAt: new Date()
+          }
+        },
+        { new: true }
+      );
+
+      if (!job) {
+        throw new Error('Job not found');
+      }
+
+      return job;
+    } catch (error) {
+      logger.error('Error publishing job:', error);
+      throw error;
+    }
   }
 } 

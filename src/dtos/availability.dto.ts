@@ -1,6 +1,6 @@
 import { IsString, IsDate, IsEnum, IsBoolean, IsArray, ValidateNested, IsOptional, IsNumber, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum DayOfWeek {
   MONDAY = 'MONDAY',
@@ -73,30 +73,52 @@ export class AvailabilityExceptionDto {
   reason?: string;
 }
 
-export class UpdateAvailabilityDto {
-  @ApiProperty({ type: [RegularScheduleDto] })
+export class CreateAvailabilityDto {
+  @ApiProperty({ description: 'Regular weekly schedule' })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RegularScheduleDto)
   regularSchedule: RegularScheduleDto[];
 
-  @ApiProperty({ type: [AvailabilityExceptionDto], required: false })
+  @ApiPropertyOptional({ description: 'Exceptions to regular schedule' })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AvailabilityExceptionDto)
   exceptions?: AvailabilityExceptionDto[];
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Maximum weekly working hours' })
   @IsNumber()
   @Min(0)
   @Max(168)
   maxWeeklyHours: number;
+}
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(24)
-  maxDailyHours?: number;
-} 
+export class AvailabilityPeriodDto {
+  @ApiProperty()
+  @IsDate()
+  @Type(() => Date)
+  startDate: Date;
+
+  @ApiProperty()
+  @IsDate()
+  @Type(() => Date)
+  endDate: Date;
+
+  @ApiProperty()
+  @IsBoolean()
+  isAvailable: boolean;
+}
+
+export class UpdateAvailabilityDto {
+  @ApiProperty({ type: [AvailabilityPeriodDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AvailabilityPeriodDto)
+  schedule: AvailabilityPeriodDto[];
+
+  @ApiProperty({ enum: ['available', 'unavailable', 'busy'] })
+  @IsString()
+  @IsEnum(['available', 'unavailable', 'busy'])
+  status: string;
+}

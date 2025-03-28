@@ -1,17 +1,13 @@
 import { Schema } from 'mongoose';
 
-export type ApplicationStatus =
-  | 'draft'
-  | 'submitted'
-  | 'under-review'
-  | 'shortlisted'
-  | 'interview-scheduled'
-  | 'interviewed'
-  | 'offer-pending'
-  | 'offered'
-  | 'accepted'
-  | 'rejected'
-  | 'withdrawn';
+export enum ApplicationStatus {
+  PENDING = 'pending',
+  REVIEWING = 'reviewing',
+  SHORTLISTED = 'shortlisted',
+  REJECTED = 'rejected',
+  ACCEPTED = 'accepted',
+  WITHDRAWN = 'withdrawn'
+}
 
 export type ApplicationSource =
   | 'direct'

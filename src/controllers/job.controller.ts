@@ -7,11 +7,18 @@ import { IJob } from '../interfaces/models.interface';
 import { PaginationParamsDto, SortingParamsDto, PaginatedResponseDto, FilteringParamsDto } from '../dtos/common.dto';
 import { Request } from 'express';
 import { JwtPayload } from 'jsonwebtoken';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { AIMatchingService } from '../services/ai-matching.service';
 
 @ApiTags('Jobs')
 @Controller('jobs')
+@UseGuards(JwtAuthGuard)
 export class JobController {
-  constructor(private readonly jobService: JobService) {}
+  constructor(
+    private readonly jobService: JobService,
+    private readonly aiMatchingService: AIMatchingService
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all jobs' })
@@ -39,9 +46,9 @@ export class JobController {
 
   @Get('search')
   @ApiOperation({ summary: 'Search jobs' })
-  @ApiResponse({ status: 200, description: 'Search results' })
-  async searchJobs(@Query() searchParams: JobSearchParamsDto) {
-    return this.jobService.searchJobs(searchParams);
+  @ApiResponse({ status: 200, description: 'Jobs found successfully' })
+  async searchJobs(@Query() query: JobSearchParamsDto) {
+    return this.jobService.search(query);
   }
 
   @Get(':id')
@@ -73,11 +80,11 @@ export class JobController {
 
   @Post(':id/publish')
   @ApiOperation({ summary: 'Publish job' })
-  @ApiResponse({ status: 200, description: 'Job published' })
+  @ApiResponse({ status: 200, description: 'Job published successfully' })
   @ApiResponse({ status: 404, description: 'Job not found' })
   @ApiParam({ name: 'id', description: 'Job ID' })
-  async publishJob(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
-    return this.jobService.publishJob(id, req.user.userId);
+  async publishJob(@Param('id') id: string) {
+    return this.jobService.publish(id);
   }
 
   @Get(':id/applications')
@@ -89,16 +96,18 @@ export class JobController {
 
   @Get(':id/matches')
   @ApiOperation({ summary: 'Get job matches' })
+  @ApiResponse({ status: 200, description: 'Job matches found successfully' })
   @ApiParam({ name: 'id', required: true })
   async getJobMatches(@Param('id') id: string) {
-    return this.jobService.getMatches(id);
+    return this.aiMatchingService.findMatchingCandidates(id);
   }
 
   @Get(':id/recommended')
   @ApiOperation({ summary: 'Get recommended workers' })
+  @ApiResponse({ status: 200, description: 'Recommended workers found successfully' })
   @ApiParam({ name: 'id', required: true })
   async getRecommendedWorkers(@Param('id') id: string) {
-    return this.jobService.getRecommendedJobs(id);
+    return this.aiMatchingService.getRecommendations(id);
   }
 
   @Put(':jobId/applications/:applicationId')

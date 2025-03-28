@@ -1,36 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-
-export enum ReportType {
-  // Staffing Reports
-  WORKER_UTILIZATION = 'worker_utilization',
-  SHIFT_COVERAGE = 'shift_coverage',
-  ATTENDANCE = 'attendance',
-  TIME_AND_ATTENDANCE = 'time_and_attendance',
-  
-  // Financial Reports
-  PAYROLL_SUMMARY = 'payroll_summary',
-  BILLING_SUMMARY = 'billing_summary',
-  REVENUE_BY_CLIENT = 'revenue_by_client',
-  
-  // Client Reports
-  CLIENT_SATISFACTION = 'client_satisfaction',
-  CLIENT_USAGE = 'client_usage',
-  
-  // Compliance Reports
-  CERTIFICATION_STATUS = 'certification_status',
-  DOCUMENT_COMPLIANCE = 'document_compliance',
-  
-  // Performance Reports
-  WORKER_PERFORMANCE = 'worker_performance',
-  BRANCH_PERFORMANCE = 'branch_performance'
-}
-
-export enum ReportFormat {
-  PDF = 'pdf',
-  CSV = 'csv',
-  EXCEL = 'excel',
-  JSON = 'json'
-}
+import { ReportType, ReportFormat } from '../types/report.types';
 
 export enum ReportStatus {
   QUEUED = 'queued',
@@ -184,3 +153,5 @@ reportSchema.index({ 'schedule.nextRun': 1 });
 reportSchema.index({ 'parameters.startDate': 1, 'parameters.endDate': 1 });
 
 export const Report = mongoose.model<IReport>('Report', reportSchema);
+
+export { ReportType };

@@ -130,6 +130,17 @@ export class LocationDto {
   maxDistance?: number;
 }
 
+export class AvailabilityPeriodDto {
+  @ApiProperty({ description: 'Start date of required availability' })
+  @IsDateString()
+  startDate: string;
+
+  @ApiPropertyOptional({ description: 'End date of required availability' })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
 export class JobSearchParamsDto {
   @ApiPropertyOptional({ description: 'Search keywords' })
   @IsOptional()
@@ -141,4 +152,10 @@ export class JobSearchParamsDto {
   @ValidateNested()
   @Type(() => LocationDto)
   location?: LocationDto;
+
+  @ApiPropertyOptional({ description: 'Required availability period' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AvailabilityPeriodDto)
+  availability?: AvailabilityPeriodDto;
 } 

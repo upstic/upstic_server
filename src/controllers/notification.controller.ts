@@ -1,8 +1,11 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
 import { NotificationService } from '../services/notification.service';
+import { ApiOperation } from '@nestjs/swagger';
+import { PaginationParamsDto } from '../dtos/pagination-params.dto';
+import { NotificationPreferencesDto } from '../dtos/notification-preferences.dto';
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
@@ -60,10 +63,9 @@ export class NotificationController {
   }
 
   @Get()
-  async getNotifications(
-    @CurrentUser() user: JwtPayload
-  ) {
-    const notifications = await this.notificationService.getNotifications(user.sub);
+  @ApiOperation({ summary: 'Get user notifications' })
+  async getNotifications(@Query() query: PaginationParamsDto) {
+    const notifications = await this.notificationService.getNotifications(query.userId);
     return { success: true, data: notifications };
   }
 
@@ -80,6 +82,7 @@ export class NotificationController {
   }
 
   @Put(':notificationId/mark-as-read')
+  @ApiOperation({ summary: 'Mark notification as read' })
   async markAsRead(
     @CurrentUser() user: JwtPayload,
     @Param('notificationId') notificationId: string
@@ -97,11 +100,16 @@ export class NotificationController {
   }
 
   @Put('preferences')
-  async updatePreferences(
-    @CurrentUser() user: JwtPayload,
-    @Body() preferences: any
-  ) {
-    const updatedPreferences = await this.notificationService.updatePreferences(user.sub, preferences);
+  @ApiOperation({ summary: 'Update notification preferences' })
+  async updatePreferences(@Body() dto: NotificationPreferencesDto) {
+    const preferences = {
+      emailEnabled: dto.emailEnabled,
+      pushEnabled: dto.pushEnabled,
+      enabledTypes: dto.enabledTypes,
+      channels: dto.channels,
+      schedules: dto.schedules
+    };
+    const updatedPreferences = await this.notificationService.updatePreferences(dto.userId, preferences);
     return { success: true, data: updatedPreferences };
   }
 
@@ -114,6 +122,7 @@ export class NotificationController {
   }
 
   @Delete(':notificationId')
+  @ApiOperation({ summary: 'Delete notification' })
   async deleteNotification(
     @CurrentUser() user: JwtPayload,
     @Param('notificationId') notificationId: string

@@ -5,6 +5,7 @@ import { IWorker, IApplication } from '../interfaces/models.interface';
 import { logger } from '../utils/logger';
 import { PaginationParamsDto, SortingParamsDto, FilteringParamsDto, PaginatedResponseDto } from '../dtos/common.dto';
 import { WorkerResponseDto } from '../dtos/worker.dto';
+import { UpdateAvailabilityDto } from '../dtos/availability.dto';
 
 @Injectable()
 export class WorkerService {
@@ -145,5 +146,41 @@ export class WorkerService {
       logger.error('Error deleting worker profile:', error);
       throw error;
     }
+  }
+
+  async updateAvailability(id: string, availability: UpdateAvailabilityDto): Promise<IWorker> {
+    try {
+      const worker = await this.workerModel.findById(id);
+      if (!worker) {
+        throw new Error('Worker not found');
+      }
+
+      // Convert AvailabilityPeriodDto to the expected format
+      const formattedSchedule = availability.schedule.map(period => ({
+        day: this.getDayFromDate(period.startDate),
+        isAvailable: period.isAvailable,
+        shifts: [{
+          startTime: period.startDate.toLocaleTimeString(),
+          endTime: period.endDate.toLocaleTimeString()
+        }]
+      }));
+
+      worker.availability = {
+        ...worker.availability,
+        schedule: formattedSchedule,
+        status: availability.status
+      };
+
+      await worker.save();
+      return worker;
+    } catch (error) {
+      logger.error('Error updating worker availability:', error);
+      throw error;
+    }
+  }
+
+  private getDayFromDate(date: Date): string {
+    const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    return days[date.getDay()];
   }
 } 

@@ -15,11 +15,19 @@ import {
   PaginatedResponseDto,
   FilteringParamsDto 
 } from '../dtos/common.dto';
+import { JwtAuthGuard } from '../guards/jwt-auth.guard';
+import { UseGuards } from '@nestjs/common';
+import { ApplicationService } from '../services/application.service';
+import { UpdateAvailabilityDto } from '../dtos/availability.dto';
 
 @ApiTags('Workers')
 @Controller('workers')
+@UseGuards(JwtAuthGuard)
 export class WorkerController {
-  constructor(private readonly workerService: WorkerService) {}
+  constructor(
+    private readonly workerService: WorkerService,
+    private readonly applicationService: ApplicationService
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all workers' })
@@ -90,26 +98,29 @@ export class WorkerController {
   }
 
   @Get(':id/availability')
-  @ApiOperation({ 
-    summary: 'Get worker availability',
-    description: 'Retrieve availability schedule for a worker'
-  })
-  @ApiResponse({ status: 200, description: 'Availability retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Worker not found' })
-  @ApiParam({ name: 'id', description: 'Worker ID' })
-  async getWorkerAvailability(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Get worker availability' })
+  @ApiResponse({ status: 200, description: 'Worker availability retrieved successfully' })
+  async getAvailability(@Param('id') id: string) {
     return this.workerService.getAvailability(id);
   }
 
+  @Put(':id/availability')
+  @ApiOperation({ summary: 'Update worker availability' })
+  @ApiResponse({ status: 200, description: 'Worker availability updated successfully' })
+  async updateAvailability(
+    @Param('id') id: string,
+    @Body() availability: UpdateAvailabilityDto
+  ) {
+    return this.workerService.updateAvailability(id, availability);
+  }
+
   @Get(':id/applications')
-  @ApiOperation({ 
-    summary: 'Get worker applications',
-    description: 'Retrieve all job applications for a worker'
-  })
-  @ApiResponse({ status: 200, description: 'Applications retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Worker not found' })
-  @ApiParam({ name: 'id', description: 'Worker ID' })
-  async getWorkerApplications(@Param('id') id: string) {
-    return this.workerService.getApplications(id);
+  @ApiOperation({ summary: 'Get worker applications' })
+  @ApiResponse({ status: 200, description: 'Worker applications retrieved successfully' })
+  async getApplications(
+    @Param('id') id: string,
+    @Query() query: PaginationParamsDto
+  ) {
+    return this.applicationService.getWorkerApplications(id, query);
   }
 } 
